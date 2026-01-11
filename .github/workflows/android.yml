@@ -50,28 +50,38 @@ jobs:
         with:
           gradle-version: "8.2"
 
-      - name: Generate signing keystore (ephemeral)
+      - name: Prepare signing (persistent if configured)
         shell: bash
         run: |
           set -euo pipefail
-          keytool -genkeypair -v \
-            -keystore "${{ runner.temp }}/release.jks" \
-            -storepass password \
-            -keypass password \
-            -alias release \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 3650 \
-            -dname "CN=LongScrollShot, OU=CI, O=LongScrollShot, L=, S=, C=CN"
+
+          if [ -n "${{ secrets.SIGNING_KEYSTORE_BASE64 }}" ]; then
+            printf '%s' "${{ secrets.SIGNING_KEYSTORE_BASE64 }}" | base64 --decode > "${{ runner.temp }}/release.jks"
+
+            echo "SIGNING_STORE_FILE=${{ runner.temp }}/release.jks" >> "$GITHUB_ENV"
+            echo "SIGNING_STORE_PASSWORD=${{ secrets.SIGNING_STORE_PASSWORD }}" >> "$GITHUB_ENV"
+            echo "SIGNING_KEY_ALIAS=${{ secrets.SIGNING_KEY_ALIAS }}" >> "$GITHUB_ENV"
+            echo "SIGNING_KEY_PASSWORD=${{ secrets.SIGNING_KEY_PASSWORD }}" >> "$GITHUB_ENV"
+          else
+            keytool -genkeypair -v \
+              -keystore "${{ runner.temp }}/release.jks" \
+              -storepass password \
+              -keypass password \
+              -alias release \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 3650 \
+              -dname "CN=LongScrollShot, OU=CI, O=LongScrollShot, L=, S=, C=CN"
+
+            echo "SIGNING_STORE_FILE=${{ runner.temp }}/release.jks" >> "$GITHUB_ENV"
+            echo "SIGNING_STORE_PASSWORD=password" >> "$GITHUB_ENV"
+            echo "SIGNING_KEY_ALIAS=release" >> "$GITHUB_ENV"
+            echo "SIGNING_KEY_PASSWORD=password" >> "$GITHUB_ENV"
+          fi
 
       - name: Build APKs (release)
         working-directory: source
         shell: bash
-        env:
-          SIGNING_STORE_FILE: ${{ runner.temp }}/release.jks
-          SIGNING_STORE_PASSWORD: password
-          SIGNING_KEY_ALIAS: release
-          SIGNING_KEY_PASSWORD: password
         run: |
           gradle \
             :probePlain:assembleRelease \
@@ -129,11 +139,6 @@ jobs:
       - name: Build app release (alt applicationId)
         working-directory: source
         shell: bash
-        env:
-          SIGNING_STORE_FILE: ${{ runner.temp }}/release.jks
-          SIGNING_STORE_PASSWORD: password
-          SIGNING_KEY_ALIAS: release
-          SIGNING_KEY_PASSWORD: password
         run: |
           gradle ':app:clean' ':app:assembleRelease' '-PAPP_APPLICATION_ID=com.example.longscrollshot.hyperos15'
 
