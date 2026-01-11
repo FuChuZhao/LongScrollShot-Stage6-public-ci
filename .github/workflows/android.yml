@@ -16,7 +16,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh
-          printf '%s' "${{ secrets.PRIVATE_REPO_SSH_KEY }}" | tr -d '\r' > ~/.ssh/id_ed25519
+          if [ -n "${{ secrets.PRIVATE_REPO_SSH_KEY_B64 }}" ]; then
+            printf '%s' "${{ secrets.PRIVATE_REPO_SSH_KEY_B64 }}" | base64 --decode > ~/.ssh/id_ed25519
+          else
+            printf '%s' "${{ secrets.PRIVATE_REPO_SSH_KEY }}" | tr -d '\r' > ~/.ssh/id_ed25519
+          fi
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan github.com >> ~/.ssh/known_hosts
 
