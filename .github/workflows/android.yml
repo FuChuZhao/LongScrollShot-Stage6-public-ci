@@ -1,0 +1,144 @@
+name: Android CI (build private source)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s' "${{ secrets.PRIVATE_REPO_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+
+      - name: Clone private repo
+        shell: bash
+        env:
+          PRIVATE_REPO_SSH_URL: ${{ secrets.PRIVATE_REPO_SSH_URL }}
+        run: |
+          set -euo pipefail
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes" \
+            git clone "$PRIVATE_REPO_SSH_URL" source
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+
+      - uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: "8.2"
+
+      - name: Generate signing keystore (ephemeral)
+        shell: bash
+        run: |
+          set -euo pipefail
+          keytool -genkeypair -v \
+            -keystore "${{ runner.temp }}/release.jks" \
+            -storepass password \
+            -keypass password \
+            -alias release \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 3650 \
+            -dname "CN=LongScrollShot, OU=CI, O=LongScrollShot, L=, S=, C=CN"
+
+      - name: Build APKs (release)
+        working-directory: source
+        shell: bash
+        env:
+          SIGNING_STORE_FILE: ${{ runner.temp }}/release.jks
+          SIGNING_STORE_PASSWORD: password
+          SIGNING_KEY_ALIAS: release
+          SIGNING_KEY_PASSWORD: password
+        run: |
+          gradle \
+            :probePlain:assembleRelease \
+            :probeAccMin:assembleRelease \
+            :probeAccFlags:assembleRelease \
+            :probeAccOverlay:assembleRelease \
+            :probeAccOverlayNoLimits:assembleRelease \
+            :probeAccGesture:assembleRelease \
+            :probeAccAutoLoop:assembleRelease \
+            :probeAccScreenshot:assembleRelease \
+            :probeAccOG:assembleRelease \
+            :probeAccOS:assembleRelease \
+            :probeAccGS:assembleRelease \
+            :probeAccAll:assembleRelease \
+            :probeAccMaterialAll:assembleRelease \
+            :probeUiMaterial:assembleRelease \
+            :app:assembleRelease
+
+      - name: Collect APKs (release)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p apks
+
+          copy_apk() {
+            local dir="$1"
+            local dest="$2"
+            local src
+            src="$(find "source/$dir" -maxdepth 1 -type f -name '*.apk' ! -name '*unsigned*' | head -n 1)"
+            if [ -z "$src" ]; then
+              echo "No APK found in source/$dir" >&2
+              find "source/$dir" -maxdepth 1 -type f -print || true
+              exit 1
+            fi
+            cp "$src" "apks/$dest"
+          }
+
+          copy_apk probePlain/build/outputs/apk/release probe-plain-release.apk
+          copy_apk probeAccMin/build/outputs/apk/release probe-acc-min-release.apk
+          copy_apk probeAccFlags/build/outputs/apk/release probe-acc-flags-release.apk
+          copy_apk probeAccOverlay/build/outputs/apk/release probe-acc-overlay-release.apk
+          copy_apk probeAccOverlayNoLimits/build/outputs/apk/release probe-acc-overlay-nolimits-release.apk
+          copy_apk probeAccGesture/build/outputs/apk/release probe-acc-gesture-release.apk
+          copy_apk probeAccAutoLoop/build/outputs/apk/release probe-acc-autoloop-release.apk
+          copy_apk probeAccScreenshot/build/outputs/apk/release probe-acc-screenshot-release.apk
+          copy_apk probeAccOG/build/outputs/apk/release probe-acc-og-release.apk
+          copy_apk probeAccOS/build/outputs/apk/release probe-acc-os-release.apk
+          copy_apk probeAccGS/build/outputs/apk/release probe-acc-gs-release.apk
+          copy_apk probeAccAll/build/outputs/apk/release probe-acc-all-release.apk
+          copy_apk probeAccMaterialAll/build/outputs/apk/release probe-acc-material-all-release.apk
+          copy_apk probeUiMaterial/build/outputs/apk/release probe-ui-material-release.apk
+
+          cp source/app/build/outputs/apk/release/app-release.apk apks/longscrollshot-release.apk
+
+      - name: Build app release (alt applicationId)
+        working-directory: source
+        shell: bash
+        env:
+          SIGNING_STORE_FILE: ${{ runner.temp }}/release.jks
+          SIGNING_STORE_PASSWORD: password
+          SIGNING_KEY_ALIAS: release
+          SIGNING_KEY_PASSWORD: password
+        run: |
+          gradle ':app:clean' ':app:assembleRelease' '-PAPP_APPLICATION_ID=com.example.longscrollshot.hyperos15'
+
+      - name: Collect alt app APK
+        shell: bash
+        run: cp source/app/build/outputs/apk/release/app-release.apk apks/longscrollshot-hyperos15-release.apk
+
+      - name: Upload APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: apks
+          path: apks
