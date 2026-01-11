@@ -146,6 +146,37 @@ jobs:
         shell: bash
         run: cp source/app/build/outputs/apk/release/app-release.apk apks/longscrollshot-hyperos15-release.apk
 
+      - name: Build app release (framework icon)
+        working-directory: source
+        shell: bash
+        run: |
+          gradle \
+            ':app:clean' \
+            ':app:assembleRelease' \
+            '-PAPP_APPLICATION_ID=com.example.longscrollshot.hyperos15.frameworkicon' \
+            '-PAPP_ICON=@android:drawable/sym_def_app_icon' \
+            '-PAPP_ROUND_ICON=@android:drawable/sym_def_app_icon'
+
+      - name: Collect framework icon app APK
+        shell: bash
+        run: cp source/app/build/outputs/apk/release/app-release.apk apks/longscrollshot-hyperos15-frameworkicon-release.apk
+
+      - name: Build app release (framework icon + minify)
+        working-directory: source
+        shell: bash
+        run: |
+          gradle \
+            ':app:clean' \
+            ':app:assembleRelease' \
+            '-PAPP_APPLICATION_ID=com.example.longscrollshot.hyperos15.frameworkiconminify' \
+            '-PAPP_ICON=@android:drawable/sym_def_app_icon' \
+            '-PAPP_ROUND_ICON=@android:drawable/sym_def_app_icon' \
+            '-PAPP_MINIFY=true'
+
+      - name: Collect framework icon + minify app APK
+        shell: bash
+        run: cp source/app/build/outputs/apk/release/app-release.apk apks/longscrollshot-hyperos15-frameworkiconminify-release.apk
+
       - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
